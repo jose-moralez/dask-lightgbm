@@ -9,25 +9,22 @@ import dask_lightgbm.core as dlgbm
 
 @pytest.fixture(scope='module')
 def client():
-    with Client(os.getenv('SCHEDULER')) as client:
+    with Client(n_workers=2) as client:
         yield client
 
 
-@pytest.fixture()
-def listen_port():
-    listen_port.port += 10
-    return listen_port.port
+def _get_data():
+    data = dd.read_csv('./system_tests/data/*.gz', compression='gzip', blocksize=None, header=None)
+    data = data.repartition(npartitions=2)
+    return data
 
 
-listen_port.port = 12400
-
-
-def test_classify_newsread(client, listen_port):
-    data = dd.read_csv('./system_tests/data/*.gz', compression='gzip', blocksize=None)
+def test_classify_newsread(client):
+    data = _get_data()
     dX = data.iloc[:, :-1]
     dy = data.iloc[:, -1]
 
-    d_classif = dlgbm.LGBMClassifier(n_estimators=50, local_listen_port=listen_port)
+    d_classif = dlgbm.LGBMClassifier(n_estimators=50)
     d_classif.fit(dX, dy)
 
     dy_pred = d_classif.predict(dX, client=client)
@@ -39,12 +36,12 @@ def test_classify_newsread(client, listen_port):
     assert acc_score > 0.8
 
 
-def test_regress_newsread(client, listen_port):
-    data = dd.read_csv('./system_tests/data/*.gz', compression='gzip', blocksize=None)
+def test_regress_newsread(client):
+    data = _get_data()
     dX = data.iloc[:, 1:]
     dy = data.iloc[:, 0]
 
-    d_regress = dlgbm.LGBMRegressor(n_estimators=50, local_listen_port=listen_port)
+    d_regress = dlgbm.LGBMRegressor(n_estimators=50)
     d_regress.fit(dX, dy)
 
     dy_pred = d_regress.predict(dX, client=client)

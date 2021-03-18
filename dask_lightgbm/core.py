@@ -1,4 +1,5 @@
 import logging
+import socket
 import urllib.parse
 from collections import defaultdict
 
@@ -24,18 +25,24 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def find_random_open_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        port = s.getsockname()[1]
+    return port
+
+
 def parse_host_port(address):
     parsed = urllib.parse.urlparse(address)
     return parsed.hostname, parsed.port
 
 
-def build_network_params(worker_addresses, local_worker_ip, local_listen_port, time_out):
-    addr_port_map = {addr: (local_listen_port + i) for i, addr in enumerate(worker_addresses)}
+def build_network_params(worker_ip_to_port, local_worker_ip, local_listen_port, time_out):
     params = {
-        'machines': ','.join(f'{parse_host_port(addr)[0]}:{port}' for addr, port in addr_port_map.items()),
-        'local_listen_port': addr_port_map[local_worker_ip],
+        'machines': ','.join(f'{parse_host_port(addr)[0]}:{port}' for addr, port in worker_ip_to_port.items()),
+        'local_listen_port': worker_ip_to_port[local_worker_ip],
         'time_out': time_out,
-        'num_machines': len(addr_port_map)
+        'num_machines': len(worker_ip_to_port)
     }
     return params
 
@@ -54,10 +61,10 @@ def concat(seq):
                         f'(from scipy or from sparse). Got {type(seq[0])}.')
 
 
-def _train_part(params, model_factory, list_of_parts, worker_addresses, return_model, local_listen_port=12400,
+def _train_part(params, model_factory, list_of_parts, worker_ip_to_port, return_model, local_listen_port=12400,
                 time_out=120, **kwargs):
 
-    network_params = build_network_params(worker_addresses, get_worker().address, local_listen_port, time_out)
+    network_params = build_network_params(worker_ip_to_port, get_worker().address, local_listen_port, time_out)
     params.update(network_params)
 
     # Concatenate many parts into one
@@ -116,12 +123,14 @@ def train(client, data, label, params, model_factory, weight=None, **kwargs):
                        f'({params.get("tree_learner", None)}), using "data" as default')
         params['tree_learner'] = 'data'
 
+    worker_ip_to_port = client.run(find_random_open_port, workers=list(worker_map.keys()))
+
     # Tell each worker to train on the parts that it has locally
     futures_classifiers = [client.submit(_train_part,
                                          model_factory=model_factory,
                                          params=assoc(params, 'num_threads', worker_ncores[worker]),
                                          list_of_parts=list_of_parts,
-                                         worker_addresses=list(worker_map.keys()),
+                                         worker_ip_to_port=worker_ip_to_port,
                                          local_listen_port=params.get('local_listen_port', 12400),
                                          time_out=params.get('time_out', 120),
                                          return_model=(worker == master_worker),

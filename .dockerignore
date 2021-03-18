@@ -1,9 +1,0 @@
-dist/
-.pytest_cache/
-.git/
-.idea/
-*.pyc
-*.py~
-*.egg-info
-docs/build
-dask-worker-space

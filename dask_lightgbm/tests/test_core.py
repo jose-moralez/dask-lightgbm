@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import pytest
 import scipy.sparse
-import sparse
 from dask.array.utils import assert_eq
 from dask_ml.metrics import accuracy_score, r2_score
 
@@ -16,7 +15,7 @@ from sklearn.metrics import confusion_matrix
 import dask_lightgbm.core as dlgbm
 
 
-data_output = ['array', 'scipy_csr_matrix', 'sparse', 'dataframe']
+data_output = ['array', 'scipy_csr_matrix', 'dataframe']
 data_centers = [[[-4, -4], [4, 4]], [[-4, -4], [4, 4], [-4, 4]]]
 
 
@@ -51,10 +50,6 @@ def _create_data(objective, n_samples=100, centers=2, output='array', chunk_size
         dw = dd.from_array(w, chunksize=chunk_size)
     elif output == 'scipy_csr_matrix':
         dX = da.from_array(X, chunks=(chunk_size, X.shape[1])).map_blocks(scipy.sparse.csr_matrix)
-        dy = da.from_array(y, chunks=chunk_size)
-        dw = da.from_array(w, chunk_size)
-    elif output == 'sparse':
-        dX = da.from_array(X, chunks=(chunk_size, X.shape[1])).map_blocks(sparse.COO)
         dy = da.from_array(y, chunks=chunk_size)
         dw = da.from_array(w, chunk_size)
 
@@ -183,17 +178,17 @@ def test_regressor_local_predict(client, listen_port):  # noqa
 
 
 def test_build_network_params():
-    workers_ips = [
-        'tcp://192.168.0.1:34545',
-        'tcp://192.168.0.2:34346',
-        'tcp://192.168.0.3:34347'
-    ]
+    worker_ip_to_port = {
+        'tcp://192.168.0.1:34545': 1,
+        'tcp://192.168.0.2:34346': 2,
+        'tcp://192.168.0.3:34347': 3
+    }
 
-    params = dlgbm.build_network_params(workers_ips, 'tcp://192.168.0.2:34346', 12400, 120)
+    params = dlgbm.build_network_params(worker_ip_to_port, 'tcp://192.168.0.2:34346', 12400, 120)
     exp_params = {
-        'machines': '192.168.0.1:12400,192.168.0.2:12401,192.168.0.3:12402',
-        'local_listen_port': 12401,
-        'num_machines': len(workers_ips),
+        'machines': '192.168.0.1:1,192.168.0.2:2,192.168.0.3:3',
+        'local_listen_port': 2,
+        'num_machines': len(worker_ip_to_port),
         'time_out': 120
     }
     assert exp_params == params
